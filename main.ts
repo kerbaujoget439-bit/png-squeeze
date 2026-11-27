@@ -643,7 +643,10 @@ function costsFromLens(lens) {
 }
 // One zlib stream for the filtered data: 256 KiB blocks, each parsed twice
 // (fixed costs, then costs from the first parse's own code lengths), each
-// emitted as the smaller of a dynamic and a fixed-Huffman block.
+// emitted as the smaller of a dynamic and a fixed-Huffman block. Tuning on
+// the practice set showed a second reparse iteration buys ~5 points for ~8 s
+// of wall, so only one reparse is run: the set must fit the 60 s wall with
+// margin on a single CPU.
 function compressZlib(data) {
   const CHUNK = 262144;
   const m = findMatches(data);
@@ -656,7 +659,7 @@ function compressZlib(data) {
     for (let i = 0; i < 288; i++) litCost1[i] = FIXED_LIT[i];
     const distCost1 = new Float64Array(30).fill(5);
     let seq = parse(chunk, mc, litCost1, litCost1, distCost1).seq;
-    for (let it = 0; it < 2; it++) {
+    for (let it = 0; it < 1; it++) {
       const fL = new Uint32Array(288); const fD = new Uint32Array(30);
       for (const s of seq) { if (typeof s === 'number') fL[s]++; else { fL[257 + lenCodeOf(s[0])]++; fD[distCodeOf(s[1])]++; } }
       fL[256] = 1;

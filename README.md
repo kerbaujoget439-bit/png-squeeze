@@ -31,7 +31,8 @@ pixel, including fully transparent pixels' colours, decodes exactly.
 
 - Deterministic: no clock, no environment, no randomness — the same input
   always produces the same bytes.
-- Fits the wall: the whole 8-instance set runs in ~40 s on one CPU.
+- Fits the wall: the whole 8-instance set runs in ~40 s on this machine's
+  single CPU, comfortably inside the 60 s budget.
 - Repository under the 1 MiB cap; the entry is a single `main.ts` plus this
   README and the MIT licence.
 
