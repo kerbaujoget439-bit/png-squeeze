@@ -383,9 +383,10 @@ function filtered(samples, width, height, bpp, choice) {
 
 // ---------------------------------------------------------------------------
 // Screen: weigh every form x filter choice by zlib level 6 + chunk overhead,
-// keep the smallest (first on a tie). Brute-force filter search is included:
-// it costs ~6 s of wall but wins ~4 points on the practice set, mostly on
-// mixed grey rows.
+// keep the smallest (first on a tie). Brute-force filter search runs only
+// on grey channels: it costs ~1.3 s of wall there but wins ~28 points on the
+// grey practice instance (text over gradients), while on palette and colour
+// forms it costs seconds for nothing measurable, so it stays off there.
 // ---------------------------------------------------------------------------
 import { deflateSync } from 'node:zlib';
 const SCREEN = { level: 6, memLevel: 8 };
@@ -688,12 +689,13 @@ function greedyFreq(chunk, mc) {
   return { fL, fD };
 }
 
-// One zlib stream for the filtered data: 256 KiB blocks, each parsed twice
-// (fixed costs, then costs from the first parse's own code lengths), each
-// emitted as the smaller of a dynamic and a fixed-Huffman block. Tuning on
-// the practice set showed a second reparse iteration buys ~5 points for ~8 s
-// of wall, so only one reparse is run: the set must fit the 60 s wall with
-// margin on a single CPU.
+// One zlib stream for the filtered data: 256 KiB blocks, each parsed once
+// with code costs from a fast greedy pass over the same match table, then
+// emitted as the smaller of a dynamic and a fixed-Huffman block. The greedy
+// pass replaces the second optimal parse: it keeps almost all of the
+// reparse's points (practice mean 711.3 vs 720.0 with the second parse) for
+// about a fifth of its cost, which is what fits the set in the 60 s wall
+// with margin on a single CPU.
 function compressZlib(data) {
   const CHUNK = 262144;
   const m = findMatches(data);
