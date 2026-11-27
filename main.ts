@@ -266,8 +266,8 @@ function paletteForm(rgba, colours, order) {
 }
 const FILTERS = {
   palette: [0],
-  paletteByLuminance: [0, 'minsum'],
-  channels: [0, 1, 2, 4, 'minsum', 'pairs'],
+  paletteByLuminance: [0, 'minsum', 'brute'],
+  channels: [0, 1, 2, 4, 'minsum', 'pairs', 'brute'],
 };
 // The forms an image can be written in: each {colourType, bpp, samples, plte, trns, filters}.
 function formsOf(rgba) {
@@ -331,11 +331,20 @@ function pairsOf(row, seen, stamp) {
   return n;
 }
 // Filtered data of samples (height rows of width x bpp), each row behind its
-// filter byte, by choice: a fixed type 0..4, or 'minsum' / 'pairs' per row.
+// filter byte, by choice: a fixed type 0..4, or 'minsum' / 'pairs' / 'brute'
+// per row. 'brute' weighs each filter by actually deflating the row at
+// level 4 with the 32 KiB written before it as dictionary — the most
+// faithful cost, and the one that wins on mixed rows (text over gradients).
+const BRUTE_CONTEXT = 32768;
+const BRUTE_LEVEL = 4;
 function filtered(samples, width, height, bpp, choice) {
   const stride = width * bpp;
   const raw = new Uint8Array(height * (stride + 1));
-  const trial = Array.from({ length: 5 }, () => new Uint8Array(stride));
+  const trial = Array.from({ length: 5 }, (_, t) => {
+    const row = new Uint8Array(stride + 1);
+    row[0] = t;
+    return row;
+  });
   const seen = new Uint32Array(65536);
   let stamp = 0;
   for (let y = 0; y < height; y++) {
@@ -349,20 +358,26 @@ function filtered(samples, width, height, bpp, choice) {
     }
     let type = 0, best = Infinity;
     for (let t = 0; t < 5; t++) {
-      filterRow(t, cur, prev, bpp, trial[t]);
-      const cost = choice === 'minsum' ? signedSum(trial[t]) : pairsOf(trial[t], seen, ++stamp);
+      filterRow(t, cur, prev, bpp, trial[t].subarray(1));
+      let cost;
+      if (choice === 'minsum') cost = signedSum(trial[t].subarray(1));
+      else if (choice === 'pairs') cost = pairsOf(trial[t].subarray(1), seen, ++stamp);
+      else {
+        const before = raw.subarray(Math.max(0, at - BRUTE_CONTEXT), at);
+        cost = deflateSync(trial[t], before.length === 0 ? { level: BRUTE_LEVEL, memLevel: 9 } : { level: BRUTE_LEVEL, memLevel: 9, dictionary: before }).length;
+      }
       if (cost < best) { best = cost; type = t; }
     }
-    raw[at] = type;
-    raw.set(trial[type], at + 1);
+    raw.set(trial[type], at);
   }
   return raw;
 }
 
 // ---------------------------------------------------------------------------
 // Screen: weigh every form x filter choice by zlib level 6 + chunk overhead,
-// keep the smallest (first on a tie). No brute-force filter search: its gain
-// (~1-2% on two of eight practice instances) is not worth ~6 s of the wall.
+// keep the smallest (first on a tie). Brute-force filter search is included:
+// it costs ~6 s of wall but wins ~4 points on the practice set, mostly on
+// mixed grey rows.
 // ---------------------------------------------------------------------------
 import { deflateSync } from 'node:zlib';
 const SCREEN = { level: 6, memLevel: 8 };
